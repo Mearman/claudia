@@ -9,8 +9,7 @@ import {
   ChevronDown,
   GitBranch,
   Settings,
-  Globe,
-  Square
+  Globe
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +29,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
-import { PreviewPromptDialog } from "./PreviewPromptDialog";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { enhanceMessages, type EnhancedMessage } from "@/types/enhanced-messages";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -90,7 +88,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [detectedUrl, setDetectedUrl] = useState("");
   const [showPreviewPrompt, setShowPreviewPrompt] = useState(false);
   const [splitPosition, setSplitPosition] = useState(50);
   const [isPreviewMaximized, setIsPreviewMaximized] = useState(false);
@@ -515,16 +512,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Handle URL detection from terminal output
   const handleLinkDetected = (url: string) => {
     if (!showPreview && !showPreviewPrompt) {
-      setDetectedUrl(url);
+      setPreviewUrl(url);
       setShowPreviewPrompt(true);
     }
   };
 
-  const handleOpenPreview = () => {
-    setPreviewUrl(detectedUrl);
-    setShowPreview(true);
-    setShowPreviewPrompt(false);
-  };
 
   const handleClosePreview = () => {
     setShowPreview(false);

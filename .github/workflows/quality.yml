@@ -1,0 +1,347 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-22.04
+    name: Code Quality Checks
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for SonarCloud
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            libssl-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Check Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --check --verbose
+
+      - name: Run Clippy with all features
+        working-directory: src-tauri
+        run: |
+          cargo clippy --all-targets --all-features --workspace -- \
+            -D warnings \
+            -D clippy::all \
+            -D clippy::pedantic \
+            -A clippy::module_name_repetitions \
+            -A clippy::similar_names \
+            -A clippy::too_many_lines
+
+      - name: Check for unsafe code
+        working-directory: src-tauri
+        run: |
+          # Install cargo-geiger to detect unsafe code
+          cargo install cargo-geiger
+          cargo geiger --forbid-only
+
+      - name: Run Rust documentation check
+        working-directory: src-tauri
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features
+
+      - name: Check TypeScript types
+        run: bunx tsc --noEmit --strict
+
+      - name: Run frontend linting (if configured)
+        run: |
+          # Add ESLint if configured
+          if [ -f "eslint.config.js" ] || [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
+            bunx eslint src/
+          fi
+          
+          # Add Prettier if configured
+          if [ -f ".prettierrc" ] || [ -f "prettier.config.js" ]; then
+            bunx prettier --check src/
+          fi
+
+  complexity-analysis:
+    runs-on: ubuntu-22.04
+    name: Complexity Analysis
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-complexity
+        run: |
+          # Install tools for complexity analysis
+          cargo install cargo-bloat
+          cargo install tokei
+
+      - name: Analyze code complexity
+        working-directory: src-tauri
+        run: |
+          echo "## Code Statistics" > complexity-report.md
+          echo "" >> complexity-report.md
+          
+          echo "### Lines of Code" >> complexity-report.md
+          echo "\`\`\`" >> complexity-report.md
+          tokei . >> complexity-report.md
+          echo "\`\`\`" >> complexity-report.md
+          echo "" >> complexity-report.md
+          
+          echo "### Binary Size Analysis" >> complexity-report.md
+          echo "\`\`\`" >> complexity-report.md
+          cargo build --release
+          cargo bloat --release >> complexity-report.md
+          echo "\`\`\`" >> complexity-report.md
+
+      - name: Comment complexity report on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const complexity = fs.readFileSync('src-tauri/complexity-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📊 Complexity Analysis\n\n${complexity}`
+            });
+
+  documentation:
+    runs-on: ubuntu-22.04
+    name: Documentation Check
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check README completeness
+        run: |
+          # Check if README has required sections
+          if ! grep -q "## Installation" README.md; then
+            echo "❌ README.md missing Installation section"
+            exit 1
+          fi
+          
+          if ! grep -q "## Usage" README.md; then
+            echo "❌ README.md missing Usage section"
+            exit 1
+          fi
+          
+          if ! grep -q "## Development" README.md; then
+            echo "❌ README.md missing Development section"
+            exit 1
+          fi
+          
+          echo "✅ README.md has all required sections"
+
+      - name: Check for TODOs and FIXMEs
+        run: |
+          todos=$(grep -r "TODO\|FIXME\|XXX\|HACK" src/ src-tauri/src/ || true)
+          if [ -n "$todos" ]; then
+            echo "## ⚠️ TODOs and FIXMEs found:" > todos.md
+            echo "" >> todos.md
+            echo "\`\`\`" >> todos.md
+            echo "$todos" >> todos.md
+            echo "\`\`\`" >> todos.md
+            echo "" >> todos.md
+            echo "Consider addressing these before release." >> todos.md
+          fi
+
+      - name: Comment TODOs on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('todos.md')) {
+              const todos = fs.readFileSync('todos.md', 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: todos
+              });
+            }
+
+  licensing:
+    runs-on: ubuntu-22.04
+    name: License Compliance
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-license
+        run: cargo install cargo-license
+
+      - name: Check Rust dependency licenses
+        working-directory: src-tauri
+        run: |
+          echo "## Rust Dependencies Licenses" > licenses.md
+          echo "" >> licenses.md
+          echo "\`\`\`" >> licenses.md
+          cargo license >> licenses.md
+          echo "\`\`\`" >> licenses.md
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Check frontend dependency licenses
+        run: |
+          echo "" >> licenses.md
+          echo "## Frontend Dependencies Licenses" >> licenses.md
+          echo "" >> licenses.md
+          echo "\`\`\`" >> licenses.md
+          npx license-checker --summary >> licenses.md
+          echo "\`\`\`" >> licenses.md
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: licenses.md
+
+  performance:
+    runs-on: ubuntu-22.04
+    name: Performance Benchmarks
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            libssl-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build release binary
+        working-directory: src-tauri
+        run: cargo build --release
+
+      - name: Measure binary size
+        working-directory: src-tauri
+        run: |
+          echo "## Performance Metrics" > performance.md
+          echo "" >> performance.md
+          echo "### Binary Size" >> performance.md
+          echo "\`\`\`" >> performance.md
+          ls -lh target/release/claudia >> performance.md
+          echo "\`\`\`" >> performance.md
+
+      - name: Benchmark frontend build
+        run: |
+          echo "" >> performance.md
+          echo "### Frontend Build Performance" >> performance.md
+          echo "\`\`\`" >> performance.md
+          time bun run build >> performance.md 2>&1
+          echo "\`\`\`" >> performance.md
+
+      - name: Comment performance report on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const performance = fs.readFileSync('performance.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: performance
+            });
+
+  summary:
+    needs: [code-quality, complexity-analysis, documentation, licensing, performance]
+    runs-on: ubuntu-22.04
+    name: Quality Summary
+    if: always()
+
+    steps:
+      - name: Quality gate summary
+        run: |
+          echo "## 📋 Code Quality Summary"
+          echo ""
+          echo "| Check | Status |"
+          echo "|-------|--------|"
+          echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+          echo "| Complexity Analysis | ${{ needs.complexity-analysis.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+          echo "| Documentation | ${{ needs.documentation.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+          echo "| Licensing | ${{ needs.licensing.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+          echo "| Performance | ${{ needs.performance.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+          
+          # Exit with error if any critical checks failed
+          if [[ "${{ needs.code-quality.result }}" != "success" ]]; then
+            echo ""
+            echo "❌ Critical quality checks failed. Please review and fix issues."
+            exit 1
+          fi
