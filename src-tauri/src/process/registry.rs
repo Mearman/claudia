@@ -18,6 +18,7 @@ pub struct ProcessInfo {
 }
 
 /// Information about a running process with handle
+#[allow(dead_code)]
 pub struct ProcessHandle {
     pub info: ProcessInfo,
     pub child: Arc<Mutex<Option<Child>>>,
@@ -29,6 +30,7 @@ pub struct ProcessRegistry {
     processes: Arc<Mutex<HashMap<i64, ProcessHandle>>>, // run_id -> ProcessHandle
 }
 
+#[allow(dead_code)]
 impl ProcessRegistry {
     pub fn new() -> Self {
         Self {
@@ -37,6 +39,7 @@ impl ProcessRegistry {
     }
 
     /// Register a new running process
+    #[allow(clippy::too_many_arguments)]
     pub fn register_process(
         &self,
         run_id: i64,
@@ -95,26 +98,28 @@ impl ProcessRegistry {
 
     /// Kill a running process
     pub async fn kill_process(&self, run_id: i64) -> Result<bool, String> {
-        let processes = self.processes.lock().map_err(|e| e.to_string())?;
-
-        if let Some(handle) = processes.get(&run_id) {
-            let child_arc = handle.child.clone();
-            drop(processes); // Release the lock before async operation
-
-            let mut child_guard = child_arc.lock().map_err(|e| e.to_string())?;
-            if let Some(ref mut child) = child_guard.as_mut() {
-                match child.kill().await {
-                    Ok(_) => {
-                        *child_guard = None; // Clear the child handle
-                        Ok(true)
-                    }
-                    Err(e) => Err(format!("Failed to kill process: {}", e)),
-                }
+        let child_arc = {
+            let processes = self.processes.lock().map_err(|e| e.to_string())?;
+            if let Some(handle) = processes.get(&run_id) {
+                handle.child.clone()
             } else {
-                Ok(false) // Process was already killed or completed
+                return Ok(false);
+            }
+        };
+
+        // Extract the child from the Arc<Mutex<Option<Child>>> to kill it
+        let child_opt = {
+            let mut child_guard = child_arc.lock().map_err(|e| e.to_string())?;
+            child_guard.take() // Take ownership of the child, leaving None
+        };
+
+        if let Some(mut child) = child_opt {
+            match child.kill().await {
+                Ok(_) => Ok(true),
+                Err(e) => Err(format!("Failed to kill process: {}", e)),
             }
         } else {
-            Ok(false) // Process not found
+            Ok(false) // Process was already killed or completed
         }
     }
 
@@ -177,24 +182,23 @@ impl ProcessRegistry {
     /// Cleanup finished processes
     pub async fn cleanup_finished_processes(&self) -> Result<Vec<i64>, String> {
         let mut finished_runs = Vec::new();
-        let processes_lock = self.processes.clone();
 
-        // First, identify finished processes
-        {
-            let processes = processes_lock.lock().map_err(|e| e.to_string())?;
-            let run_ids: Vec<i64> = processes.keys().cloned().collect();
-            drop(processes);
+        // First, get all run IDs
+        let run_ids: Vec<i64> = {
+            let processes = self.processes.lock().map_err(|e| e.to_string())?;
+            processes.keys().cloned().collect()
+        };
 
-            for run_id in run_ids {
-                if !self.is_process_running(run_id).await? {
-                    finished_runs.push(run_id);
-                }
+        // Check each process without holding the main lock
+        for run_id in run_ids {
+            if !self.is_process_running(run_id).await? {
+                finished_runs.push(run_id);
             }
         }
 
         // Then remove them from the registry
         {
-            let mut processes = processes_lock.lock().map_err(|e| e.to_string())?;
+            let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
             for run_id in &finished_runs {
                 processes.remove(run_id);
             }

@@ -20,6 +20,7 @@ pub struct CheckpointState {
     claude_dir: Arc<RwLock<Option<PathBuf>>>,
 }
 
+#[allow(dead_code)]
 impl CheckpointState {
     /// Creates a new CheckpointState instance
     pub fn new() -> Self {

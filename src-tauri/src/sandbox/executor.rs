@@ -113,8 +113,7 @@ impl SandboxExecutor {
                     "Gaol started the process but we can't get the Child handle - using fallback"
                 );
 
-                // Drop the process to avoid zombie
-                drop(process);
+                // Process will be dropped automatically
 
                 // Fall through to fallback
             }

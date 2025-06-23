@@ -1,5 +1,4 @@
-use crate::sandbox::executor::{SerializedOperation, SerializedProfile};
-use crate::sandbox::profile::{ProfileBuilder, SandboxRule};
+use crate::sandbox::profile::ProfileBuilder;
 use anyhow::Result;
 use chrono;
 use log::{debug, error, info, warn};
@@ -8,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -111,6 +110,20 @@ fn find_claude_binary(app_handle: &AppHandle) -> Result<String, String> {
 
     log::error!("Could not find claude binary in any common location");
     Err("Claude Code not found. Please ensure it's installed and in one of these locations: /usr/local/bin, /opt/homebrew/bin, ~/.claude/local, ~/.local/bin, or in your PATH".to_string())
+}
+
+/// Agent creation/update parameters
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AgentParams {
+    pub name: String,
+    pub icon: String,
+    pub system_prompt: String,
+    pub default_task: Option<String>,
+    pub model: Option<String>,
+    pub sandbox_enabled: Option<bool>,
+    pub enable_file_read: Option<bool>,
+    pub enable_file_write: Option<bool>,
+    pub enable_network: Option<bool>,
 }
 
 /// Represents a CC Agent stored in the database
@@ -555,6 +568,7 @@ pub async fn list_agents(db: State<'_, AgentDb>) -> Result<Vec<Agent>, String> {
 
 /// Create a new agent
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_agent(
     db: State<'_, AgentDb>,
     name: String,
@@ -611,6 +625,7 @@ pub async fn create_agent(
 
 /// Update an existing agent
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_agent(
     db: State<'_, AgentDb>,
     id: i64,

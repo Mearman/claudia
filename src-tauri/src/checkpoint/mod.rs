@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod manager;
 pub mod state;
@@ -96,7 +96,7 @@ pub struct SessionTimeline {
 }
 
 /// Strategy for automatic checkpoint creation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointStrategy {
     /// Only create checkpoints manually
@@ -106,6 +106,7 @@ pub enum CheckpointStrategy {
     /// Create checkpoint after each tool use
     PerToolUse,
     /// Create checkpoint after destructive operations
+    #[default]
     Smart,
 }
 
@@ -170,12 +171,6 @@ pub struct FileDiff {
     pub diff_content: Option<String>,
 }
 
-impl Default for CheckpointStrategy {
-    fn default() -> Self {
-        CheckpointStrategy::Smart
-    }
-}
-
 impl SessionTimeline {
     /// Create a new empty timeline
     pub fn new(session_id: String) -> Self {
@@ -218,8 +213,9 @@ pub struct CheckpointPaths {
     pub files_dir: PathBuf,
 }
 
+#[allow(dead_code)]
 impl CheckpointPaths {
-    pub fn new(claude_dir: &PathBuf, project_id: &str, session_id: &str) -> Self {
+    pub fn new(claude_dir: &Path, project_id: &str, session_id: &str) -> Self {
         let base_dir = claude_dir
             .join("projects")
             .join(project_id)

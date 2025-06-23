@@ -235,26 +235,23 @@ pub async fn cleanup_screenshot_temp_files(
     let entries =
         fs::read_dir(&temp_dir).map_err(|e| format!("Failed to read temp directory: {}", e))?;
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
+    for entry in entries.flatten() {
+        let path = entry.path();
 
-            // Check if it's a claudia screenshot file
-            if let Some(filename) = path.file_name() {
-                if let Some(filename_str) = filename.to_str() {
-                    if filename_str.starts_with("claudia_screenshot_")
-                        && filename_str.ends_with(".png")
-                    {
-                        // Check file age
-                        if let Ok(metadata) = fs::metadata(&path) {
-                            if let Ok(modified) = metadata.modified() {
-                                let modified_time = chrono::DateTime::<chrono::Utc>::from(modified);
-                                if modified_time < cutoff_time {
-                                    // Delete the file
-                                    if fs::remove_file(&path).is_ok() {
-                                        deleted_count += 1;
-                                        log::debug!("Deleted old screenshot: {:?}", path);
-                                    }
+        // Check if it's a claudia screenshot file
+        if let Some(filename) = path.file_name() {
+            if let Some(filename_str) = filename.to_str() {
+                if filename_str.starts_with("claudia_screenshot_") && filename_str.ends_with(".png")
+                {
+                    // Check file age
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            let modified_time = chrono::DateTime::<chrono::Utc>::from(modified);
+                            if modified_time < cutoff_time {
+                                // Delete the file
+                                if fs::remove_file(&path).is_ok() {
+                                    deleted_count += 1;
+                                    log::debug!("Deleted old screenshot: {:?}", path);
                                 }
                             }
                         }

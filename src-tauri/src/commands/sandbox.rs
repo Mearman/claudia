@@ -705,6 +705,7 @@ pub async fn list_sandbox_violations(
 
 /// Log a sandbox violation
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn log_sandbox_violation(
     db: State<'_, AgentDb>,
     profile_id: Option<i64>,

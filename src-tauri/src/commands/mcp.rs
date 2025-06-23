@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use dirs;
-use log::{error, info, warn};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -224,6 +224,7 @@ fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<&str>) -> Result
 
 /// Adds a new MCP server
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn mcp_add(
     app: AppHandle,
     name: String,
