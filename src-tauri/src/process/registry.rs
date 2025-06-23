@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use serde::{Deserialize, Serialize};
 use tokio::process::Child;
-use chrono::{DateTime, Utc};
 
 /// Information about a running agent process
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ impl ProcessRegistry {
         child: Child,
     ) -> Result<(), String> {
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         let process_info = ProcessInfo {
             run_id,
             agent_id,
@@ -81,7 +81,10 @@ impl ProcessRegistry {
     /// Get all running processes
     pub fn get_running_processes(&self) -> Result<Vec<ProcessInfo>, String> {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
-        Ok(processes.values().map(|handle| handle.info.clone()).collect())
+        Ok(processes
+            .values()
+            .map(|handle| handle.info.clone())
+            .collect())
     }
 
     /// Get a specific running process
@@ -93,11 +96,11 @@ impl ProcessRegistry {
     /// Kill a running process
     pub async fn kill_process(&self, run_id: i64) -> Result<bool, String> {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         if let Some(handle) = processes.get(&run_id) {
             let child_arc = handle.child.clone();
             drop(processes); // Release the lock before async operation
-            
+
             let mut child_guard = child_arc.lock().map_err(|e| e.to_string())?;
             if let Some(ref mut child) = child_guard.as_mut() {
                 match child.kill().await {
@@ -118,11 +121,11 @@ impl ProcessRegistry {
     /// Check if a process is still running by trying to get its status
     pub async fn is_process_running(&self, run_id: i64) -> Result<bool, String> {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         if let Some(handle) = processes.get(&run_id) {
             let child_arc = handle.child.clone();
             drop(processes); // Release the lock before async operation
-            
+
             let mut child_guard = child_arc.lock().map_err(|e| e.to_string())?;
             if let Some(ref mut child) = child_guard.as_mut() {
                 match child.try_wait() {
@@ -175,20 +178,20 @@ impl ProcessRegistry {
     pub async fn cleanup_finished_processes(&self) -> Result<Vec<i64>, String> {
         let mut finished_runs = Vec::new();
         let processes_lock = self.processes.clone();
-        
+
         // First, identify finished processes
         {
             let processes = processes_lock.lock().map_err(|e| e.to_string())?;
             let run_ids: Vec<i64> = processes.keys().cloned().collect();
             drop(processes);
-            
+
             for run_id in run_ids {
                 if !self.is_process_running(run_id).await? {
                     finished_runs.push(run_id);
                 }
             }
         }
-        
+
         // Then remove them from the registry
         {
             let mut processes = processes_lock.lock().map_err(|e| e.to_string())?;
@@ -196,7 +199,7 @@ impl ProcessRegistry {
                 processes.remove(run_id);
             }
         }
-        
+
         Ok(finished_runs)
     }
 }
